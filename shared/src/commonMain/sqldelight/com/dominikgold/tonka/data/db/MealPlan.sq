@@ -1,0 +1,88 @@
+CREATE TABLE meal_plan_entry (
+    id TEXT NOT NULL PRIMARY KEY,
+    date TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    recipe_id TEXT REFERENCES recipe(id) ON DELETE SET NULL,
+    variant_id TEXT REFERENCES recipe_variant(id) ON DELETE SET NULL,
+    title_snapshot TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE weekday_theme (
+    weekday INTEGER NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    tag_match TEXT NOT NULL DEFAULT 'ANY'
+);
+
+CREATE TABLE weekday_theme_tag (
+    weekday INTEGER NOT NULL REFERENCES weekday_theme(weekday) ON DELETE CASCADE,
+    tag_id TEXT NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
+    PRIMARY KEY (weekday, tag_id)
+);
+
+CREATE TABLE app_setting (
+    key TEXT NOT NULL PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+CREATE INDEX meal_plan_entry_date ON meal_plan_entry(date);
+
+selectAllEntries:
+SELECT * FROM meal_plan_entry ORDER BY date, sort_order, id;
+
+insertEntry:
+INSERT INTO meal_plan_entry(id, date, sort_order, recipe_id, variant_id, title_snapshot, note) VALUES ?;
+
+updateEntryPlacement:
+UPDATE meal_plan_entry SET date = ?, sort_order = ? WHERE id = ?;
+
+updateEntryVariant:
+UPDATE meal_plan_entry SET variant_id = ? WHERE id = ?;
+
+updateTitleSnapshots:
+UPDATE meal_plan_entry SET title_snapshot = ? WHERE recipe_id = ?;
+
+deleteEntry:
+DELETE FROM meal_plan_entry WHERE id = ?;
+
+maxSortOrderOn:
+SELECT MAX(sort_order) FROM meal_plan_entry WHERE date = ?;
+
+deleteAllEntries:
+DELETE FROM meal_plan_entry;
+
+selectAllThemes:
+SELECT * FROM weekday_theme ORDER BY weekday;
+
+upsertTheme:
+INSERT OR REPLACE INTO weekday_theme(weekday, name, tag_match) VALUES ?;
+
+deleteTheme:
+DELETE FROM weekday_theme WHERE weekday = ?;
+
+deleteAllThemes:
+DELETE FROM weekday_theme;
+
+selectAllThemeTags:
+SELECT * FROM weekday_theme_tag ORDER BY weekday, tag_id;
+
+insertThemeTag:
+INSERT OR IGNORE INTO weekday_theme_tag(weekday, tag_id) VALUES ?;
+
+deleteThemeTags:
+DELETE FROM weekday_theme_tag WHERE weekday = ?;
+
+selectAllSettings:
+SELECT * FROM app_setting ORDER BY key;
+
+selectSetting:
+SELECT value FROM app_setting WHERE key = ?;
+
+upsertSetting:
+INSERT OR REPLACE INTO app_setting(key, value) VALUES (?, ?);
+
+deleteSetting:
+DELETE FROM app_setting WHERE key = ?;
+
+deleteAllSettings:
+DELETE FROM app_setting;

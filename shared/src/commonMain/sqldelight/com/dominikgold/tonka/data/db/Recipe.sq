@@ -1,0 +1,338 @@
+import kotlin.Boolean;
+
+CREATE TABLE recipe (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    source_type TEXT NOT NULL,
+    source_url TEXT,
+    source_book TEXT,
+    source_author TEXT,
+    source_page TEXT,
+    header_image_path TEXT,
+    yield_text TEXT NOT NULL DEFAULT '',
+    prep_minutes INTEGER,
+    cook_minutes INTEGER,
+    season_override_months INTEGER,
+    diet_override TEXT,
+    current_revision INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE recipe_variant (
+    id TEXT NOT NULL PRIMARY KEY,
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL,
+    is_default INTEGER AS Boolean NOT NULL DEFAULT 0
+);
+
+CREATE TABLE recipe_section (
+    id TEXT NOT NULL PRIMARY KEY,
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL
+);
+
+CREATE TABLE recipe_ingredient (
+    id TEXT NOT NULL PRIMARY KEY,
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    section_id TEXT REFERENCES recipe_section(id) ON DELETE SET NULL,
+    sort_order INTEGER NOT NULL,
+    raw_text TEXT NOT NULL,
+    amount_text TEXT NOT NULL DEFAULT '',
+    unit TEXT NOT NULL DEFAULT '',
+    ingredient_id TEXT REFERENCES ingredient(id) ON DELETE SET NULL,
+    display_name TEXT NOT NULL,
+    preparation TEXT NOT NULL DEFAULT '',
+    is_optional INTEGER AS Boolean NOT NULL DEFAULT 0,
+    is_key INTEGER AS Boolean NOT NULL DEFAULT 0
+);
+
+CREATE TABLE recipe_ingredient_alternative (
+    line_id TEXT NOT NULL REFERENCES recipe_ingredient(id) ON DELETE CASCADE,
+    ingredient_id TEXT NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    note TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL,
+    PRIMARY KEY (line_id, ingredient_id)
+);
+
+CREATE TABLE recipe_step (
+    id TEXT NOT NULL PRIMARY KEY,
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    section_id TEXT REFERENCES recipe_section(id) ON DELETE SET NULL,
+    sort_order INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    image_path TEXT,
+    timer_seconds INTEGER
+);
+
+CREATE TABLE recipe_tip (
+    id TEXT NOT NULL PRIMARY KEY,
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    sort_order INTEGER NOT NULL,
+    text TEXT NOT NULL
+);
+
+CREATE TABLE variant_scope (
+    owner_type TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    variant_id TEXT NOT NULL REFERENCES recipe_variant(id) ON DELETE CASCADE,
+    PRIMARY KEY (owner_type, owner_id, variant_id)
+);
+
+CREATE TABLE tag (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
+
+CREATE TABLE recipe_tag (
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    tag_id TEXT NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
+    PRIMARY KEY (recipe_id, tag_id)
+);
+
+CREATE TABLE recipe_note (
+    id TEXT NOT NULL PRIMARY KEY,
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    variant_id TEXT REFERENCES recipe_variant(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    text TEXT NOT NULL
+);
+
+CREATE TABLE recipe_revision (
+    id TEXT NOT NULL PRIMARY KEY,
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    number INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    snapshot_json TEXT NOT NULL,
+    UNIQUE (recipe_id, number)
+);
+
+CREATE TABLE recipe_scan_image (
+    recipe_id TEXT NOT NULL REFERENCES recipe(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    sort_order INTEGER NOT NULL,
+    PRIMARY KEY (recipe_id, path)
+);
+
+CREATE TABLE recipe_draft (
+    id TEXT NOT NULL PRIMARY KEY,
+    updated_at INTEGER NOT NULL,
+    draft_json TEXT NOT NULL
+);
+
+CREATE INDEX recipe_ingredient_recipe ON recipe_ingredient(recipe_id);
+CREATE INDEX recipe_step_recipe ON recipe_step(recipe_id);
+CREATE INDEX variant_scope_variant ON variant_scope(variant_id);
+
+-- recipe
+
+selectAllRecipes:
+SELECT * FROM recipe ORDER BY id;
+
+-- Android 8 ships SQLite 3.18 without UPSERT, so writes check for the row first
+insertRecipe:
+INSERT INTO recipe(id, title, description, source_type, source_url, source_book, source_author, source_page, header_image_path, yield_text, prep_minutes, cook_minutes, season_override_months, diet_override, current_revision, created_at, updated_at)
+VALUES ?;
+
+updateRecipe:
+UPDATE recipe SET
+    title = :title,
+    description = :description,
+    source_type = :sourceType,
+    source_url = :sourceUrl,
+    source_book = :sourceBook,
+    source_author = :sourceAuthor,
+    source_page = :sourcePage,
+    header_image_path = :headerImagePath,
+    yield_text = :yieldText,
+    prep_minutes = :prepMinutes,
+    cook_minutes = :cookMinutes,
+    season_override_months = :seasonOverrideMonths,
+    diet_override = :dietOverride,
+    current_revision = :currentRevision,
+    updated_at = :updatedAt
+WHERE id = :id;
+
+selectRecipeById:
+SELECT * FROM recipe WHERE id = ?;
+
+deleteRecipe:
+DELETE FROM recipe WHERE id = ?;
+
+deleteAllRecipes:
+DELETE FROM recipe;
+
+-- variants
+
+selectAllVariants:
+SELECT * FROM recipe_variant ORDER BY recipe_id, sort_order, id;
+
+insertVariant:
+INSERT INTO recipe_variant(id, recipe_id, name, description, sort_order, is_default) VALUES ?;
+
+updateVariant:
+UPDATE recipe_variant SET name = ?, description = ?, sort_order = ?, is_default = ? WHERE id = ?;
+
+selectVariantIdsOfRecipe:
+SELECT id FROM recipe_variant WHERE recipe_id = ?;
+
+deleteVariant:
+DELETE FROM recipe_variant WHERE id = ?;
+
+-- sections, lines, alternatives, steps, tips, scopes
+
+selectAllSections:
+SELECT * FROM recipe_section ORDER BY recipe_id, sort_order, id;
+
+insertSection:
+INSERT INTO recipe_section(id, recipe_id, name, sort_order) VALUES ?;
+
+deleteSectionsOfRecipe:
+DELETE FROM recipe_section WHERE recipe_id = ?;
+
+selectAllLines:
+SELECT * FROM recipe_ingredient ORDER BY recipe_id, sort_order, id;
+
+insertLine:
+INSERT INTO recipe_ingredient(id, recipe_id, section_id, sort_order, raw_text, amount_text, unit, ingredient_id, display_name, preparation, is_optional, is_key)
+VALUES ?;
+
+deleteLinesOfRecipe:
+DELETE FROM recipe_ingredient WHERE recipe_id = ?;
+
+repointLines:
+UPDATE recipe_ingredient SET ingredient_id = :toId WHERE ingredient_id = :fromId;
+
+setLineIngredient:
+UPDATE recipe_ingredient SET ingredient_id = ? WHERE id = ?;
+
+selectAllAlternatives:
+SELECT * FROM recipe_ingredient_alternative ORDER BY line_id, sort_order, ingredient_id;
+
+insertAlternative:
+INSERT OR IGNORE INTO recipe_ingredient_alternative(line_id, ingredient_id, note, sort_order) VALUES ?;
+
+repointAlternatives:
+UPDATE OR IGNORE recipe_ingredient_alternative SET ingredient_id = :toId WHERE ingredient_id = :fromId;
+
+deleteAlternativesOf:
+DELETE FROM recipe_ingredient_alternative WHERE ingredient_id = ?;
+
+selectAllSteps:
+SELECT * FROM recipe_step ORDER BY recipe_id, sort_order, id;
+
+insertStep:
+INSERT INTO recipe_step(id, recipe_id, section_id, sort_order, text, image_path, timer_seconds) VALUES ?;
+
+deleteStepsOfRecipe:
+DELETE FROM recipe_step WHERE recipe_id = ?;
+
+selectAllTips:
+SELECT * FROM recipe_tip ORDER BY recipe_id, sort_order, id;
+
+insertTip:
+INSERT INTO recipe_tip(id, recipe_id, sort_order, text) VALUES ?;
+
+deleteTipsOfRecipe:
+DELETE FROM recipe_tip WHERE recipe_id = ?;
+
+selectAllScopes:
+SELECT * FROM variant_scope ORDER BY owner_type, owner_id, variant_id;
+
+insertScope:
+INSERT OR IGNORE INTO variant_scope(owner_type, owner_id, variant_id) VALUES ?;
+
+deleteScopesOfRecipe:
+DELETE FROM variant_scope WHERE variant_id IN (SELECT id FROM recipe_variant WHERE recipe_id = ?);
+
+-- tags
+
+selectAllTags:
+SELECT * FROM tag ORDER BY id;
+
+selectTagByName:
+SELECT * FROM tag WHERE name = ? COLLATE NOCASE;
+
+insertTag:
+INSERT INTO tag(id, name) VALUES ?;
+
+renameTag:
+UPDATE tag SET name = ? WHERE id = ?;
+
+deleteTag:
+DELETE FROM tag WHERE id = ?;
+
+deleteUnusedTags:
+DELETE FROM tag
+WHERE id NOT IN (SELECT tag_id FROM recipe_tag)
+AND id NOT IN (SELECT tag_id FROM weekday_theme_tag);
+
+selectAllRecipeTags:
+SELECT * FROM recipe_tag ORDER BY recipe_id, tag_id;
+
+insertRecipeTag:
+INSERT OR IGNORE INTO recipe_tag(recipe_id, tag_id) VALUES ?;
+
+deleteTagsOfRecipe:
+DELETE FROM recipe_tag WHERE recipe_id = ?;
+
+-- notes
+
+selectAllNotes:
+SELECT * FROM recipe_note ORDER BY id;
+
+selectNotesOfRecipe:
+SELECT * FROM recipe_note WHERE recipe_id = ? ORDER BY created_at DESC;
+
+insertNote:
+INSERT INTO recipe_note(id, recipe_id, variant_id, created_at, text) VALUES ?;
+
+deleteNote:
+DELETE FROM recipe_note WHERE id = ?;
+
+-- revisions
+
+selectAllRevisions:
+SELECT * FROM recipe_revision ORDER BY recipe_id, number;
+
+selectRevisionsOfRecipe:
+SELECT * FROM recipe_revision WHERE recipe_id = ? ORDER BY number DESC;
+
+selectRevision:
+SELECT * FROM recipe_revision WHERE recipe_id = ? AND number = ?;
+
+insertRevision:
+INSERT INTO recipe_revision(id, recipe_id, number, created_at, summary, snapshot_json) VALUES ?;
+
+-- scan images
+
+selectAllScanImages:
+SELECT * FROM recipe_scan_image ORDER BY recipe_id, sort_order;
+
+selectScanImagesOfRecipe:
+SELECT * FROM recipe_scan_image WHERE recipe_id = ? ORDER BY sort_order;
+
+insertScanImage:
+INSERT OR IGNORE INTO recipe_scan_image(recipe_id, path, sort_order) VALUES ?;
+
+-- drafts
+
+selectAllDrafts:
+SELECT * FROM recipe_draft ORDER BY updated_at DESC;
+
+selectDraft:
+SELECT * FROM recipe_draft WHERE id = ?;
+
+upsertDraft:
+INSERT OR REPLACE INTO recipe_draft(id, updated_at, draft_json) VALUES ?;
+
+deleteDraft:
+DELETE FROM recipe_draft WHERE id = ?;
+
+deleteAllDrafts:
+DELETE FROM recipe_draft;

@@ -1,0 +1,168 @@
+import kotlin.Boolean;
+
+CREATE TABLE ingredient (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    kind TEXT NOT NULL,
+    diet_class TEXT NOT NULL,
+    seasonality TEXT NOT NULL,
+    fresh_months INTEGER NOT NULL DEFAULT 0,
+    storage_months INTEGER NOT NULL DEFAULT 0,
+    is_pantry_staple INTEGER AS Boolean NOT NULL DEFAULT 0,
+    needs_review INTEGER AS Boolean NOT NULL DEFAULT 0,
+    origin TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    seed_key TEXT UNIQUE,
+    user_edited INTEGER AS Boolean NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE ingredient_alias (
+    ingredient_id TEXT NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    alias TEXT NOT NULL,
+    normalized TEXT NOT NULL UNIQUE,
+    PRIMARY KEY (ingredient_id, alias)
+);
+
+CREATE TABLE ingredient_edge (
+    child_id TEXT NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    parent_id TEXT NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    PRIMARY KEY (child_id, parent_id)
+);
+
+CREATE TABLE ingredient_substitution (
+    id TEXT NOT NULL PRIMARY KEY,
+    from_id TEXT NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    to_id TEXT NOT NULL REFERENCES ingredient(id) ON DELETE CASCADE,
+    note TEXT NOT NULL DEFAULT '',
+    bidirectional INTEGER AS Boolean NOT NULL DEFAULT 0
+);
+
+CREATE INDEX ingredient_edge_parent ON ingredient_edge(parent_id);
+
+selectAll:
+SELECT * FROM ingredient ORDER BY id;
+
+selectById:
+SELECT * FROM ingredient WHERE id = ?;
+
+selectBySeedKey:
+SELECT * FROM ingredient WHERE seed_key = ?;
+
+selectByName:
+SELECT * FROM ingredient WHERE name = ? COLLATE NOCASE;
+
+insert:
+INSERT INTO ingredient(id, name, kind, diet_class, seasonality, fresh_months, storage_months, is_pantry_staple, needs_review, origin, notes, seed_key, user_edited, created_at, updated_at)
+VALUES ?;
+
+update:
+UPDATE ingredient SET
+    name = :name,
+    kind = :kind,
+    diet_class = :dietClass,
+    seasonality = :seasonality,
+    fresh_months = :freshMonths,
+    storage_months = :storageMonths,
+    is_pantry_staple = :isPantryStaple,
+    needs_review = :needsReview,
+    notes = :notes,
+    user_edited = :userEdited,
+    updated_at = :updatedAt
+WHERE id = :id;
+
+setNeedsReview:
+UPDATE ingredient SET needs_review = ?, updated_at = ? WHERE id = ?;
+
+deleteById:
+DELETE FROM ingredient WHERE id = ?;
+
+deleteAll:
+DELETE FROM ingredient;
+
+selectAllAliases:
+SELECT * FROM ingredient_alias ORDER BY ingredient_id, alias;
+
+insertAlias:
+INSERT OR IGNORE INTO ingredient_alias(ingredient_id, alias, normalized) VALUES ?;
+
+deleteAliasesFor:
+DELETE FROM ingredient_alias WHERE ingredient_id = ?;
+
+moveAliases:
+UPDATE OR IGNORE ingredient_alias SET ingredient_id = :toId WHERE ingredient_id = :fromId;
+
+deleteAllAliases:
+DELETE FROM ingredient_alias;
+
+selectAllEdges:
+SELECT * FROM ingredient_edge ORDER BY child_id, parent_id;
+
+insertEdge:
+INSERT OR IGNORE INTO ingredient_edge(child_id, parent_id) VALUES ?;
+
+deleteParentEdgesOf:
+DELETE FROM ingredient_edge WHERE child_id = ?;
+
+deleteEdge:
+DELETE FROM ingredient_edge WHERE child_id = ? AND parent_id = ?;
+
+repointEdgeChildren:
+UPDATE OR IGNORE ingredient_edge SET child_id = :toId WHERE child_id = :fromId;
+
+repointEdgeParents:
+UPDATE OR IGNORE ingredient_edge SET parent_id = :toId WHERE parent_id = :fromId;
+
+deleteSelfEdges:
+DELETE FROM ingredient_edge WHERE child_id = parent_id;
+
+deleteAllEdges:
+DELETE FROM ingredient_edge;
+
+-- Adding child -> parent closes a cycle when the child already is the parent or one of its ancestors
+countCycleHits:
+WITH RECURSIVE ancestor(id) AS (
+    SELECT id FROM ingredient WHERE id = :parentId
+    UNION
+    SELECT ingredient_edge.parent_id FROM ingredient_edge JOIN ancestor ON ingredient_edge.child_id = ancestor.id
+)
+SELECT COUNT(*) FROM ancestor WHERE id = :childId;
+
+selectDescendantIngredients:
+WITH RECURSIVE descendant(id) AS (
+    SELECT child_id FROM ingredient_edge WHERE parent_id = :categoryId
+    UNION
+    SELECT ingredient_edge.child_id FROM ingredient_edge JOIN descendant ON ingredient_edge.parent_id = descendant.id
+)
+SELECT ingredient.* FROM ingredient JOIN descendant ON ingredient.id = descendant.id
+WHERE ingredient.kind = 'INGREDIENT'
+ORDER BY ingredient.name;
+
+selectAllSubstitutions:
+SELECT * FROM ingredient_substitution ORDER BY id;
+
+insertSubstitution:
+INSERT OR REPLACE INTO ingredient_substitution(id, from_id, to_id, note, bidirectional) VALUES ?;
+
+deleteSubstitution:
+DELETE FROM ingredient_substitution WHERE id = ?;
+
+repointSubstitutionsFrom:
+UPDATE ingredient_substitution SET from_id = :toId WHERE from_id = :fromId;
+
+repointSubstitutionsTo:
+UPDATE ingredient_substitution SET to_id = :toId WHERE to_id = :fromId;
+
+deleteSelfSubstitutions:
+DELETE FROM ingredient_substitution WHERE from_id = to_id;
+
+deleteAllSubstitutions:
+DELETE FROM ingredient_substitution;
+
+countReferences:
+SELECT
+    (SELECT COUNT(*) FROM recipe_ingredient WHERE ingredient_id = :id) +
+    (SELECT COUNT(*) FROM recipe_ingredient_alternative WHERE ingredient_id = :id) +
+    (SELECT COUNT(*) FROM ingredient_substitution WHERE from_id = :id OR to_id = :id) +
+    (SELECT COUNT(*) FROM ingredient_edge WHERE parent_id = :id);
