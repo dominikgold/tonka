@@ -2,6 +2,7 @@ package com.dominikgold.tonka.domain
 
 import com.dominikgold.tonka.model.DietClass
 import com.dominikgold.tonka.model.Ingredient
+import com.dominikgold.tonka.model.RecipeId
 import com.dominikgold.tonka.model.RecipeSnapshot
 import com.dominikgold.tonka.model.VariantId
 import kotlinx.datetime.Month
@@ -44,11 +45,15 @@ data class RecipeSeason(
     val freshIngredients: List<Ingredient>,
 )
 
-class RecipeAnalysis(private val graph: IngredientGraph) {
+class RecipeAnalysis(
+    private val graph: IngredientGraph,
+    // Resolves recipes linked from ingredient lines
+    private val recipes: (RecipeId) -> RecipeSnapshot? = { null },
+) {
 
-    fun diet(snapshot: RecipeSnapshot): RecipeDiet {
+    fun diet(snapshot: RecipeSnapshot, visited: Set<RecipeId> = setOf(snapshot.id)): RecipeDiet {
         val byVariant = snapshot.variants.associate { variant ->
-            variant.id to (snapshot.dietOverride ?: variantDiet(snapshot, variant.id))
+            variant.id to (snapshot.dietOverride ?: variantDiet(snapshot, variant.id, visited))
         }
         val known = byVariant.values.filter { it != DietClass.UNKNOWN }
         val filterClass = known.minByOrNull { it.ordinal } ?: DietClass.UNKNOWN
@@ -59,14 +64,22 @@ class RecipeAnalysis(private val graph: IngredientGraph) {
         )
     }
 
-    // The least permissive class among non-optional lines; any unresolved or unknown line makes it UNKNOWN
-    fun variantDiet(snapshot: RecipeSnapshot, variantId: VariantId): DietClass {
+    // The least permissive class among non-optional lines; any unresolved or unknown line makes it UNKNOWN.
+    // A linked recipe counts with its own default variant class, so a diet set by hand on a base recipe carries over.
+    fun variantDiet(
+        snapshot: RecipeSnapshot,
+        variantId: VariantId,
+        visited: Set<RecipeId> = setOf(snapshot.id),
+    ): DietClass {
         val lines = snapshot.effectiveLines(variantId).filter { !it.isOptional }
         if (lines.isEmpty()) return DietClass.UNKNOWN
         var result = DietClass.VEGAN
         for (line in lines) {
-            val ingredientId = line.ingredientId ?: return DietClass.UNKNOWN
-            val lineClass = graph.dietClass(ingredientId)
+            val lineClass = when (val linkedId = line.linkedRecipeId) {
+                null -> graph.dietClass(line.ingredientId ?: return DietClass.UNKNOWN)
+                in visited -> continue
+                else -> recipes(linkedId)?.let { diet(it, visited + linkedId).defaultVariantClass } ?: DietClass.UNKNOWN
+            }
             if (lineClass == DietClass.UNKNOWN) return DietClass.UNKNOWN
             if (lineClass.ordinal > result.ordinal) result = lineClass
         }
@@ -74,7 +87,7 @@ class RecipeAnalysis(private val graph: IngredientGraph) {
     }
 
     fun variantSeason(snapshot: RecipeSnapshot, variantId: VariantId, month: Month): VariantSeason {
-        val relevant = snapshot.effectiveLines(variantId).filter { line ->
+        val relevant = snapshot.expandedLines(variantId, recipes).filter { line ->
             !line.isOptional && line.ingredientId?.let(graph::isSeasonal) == true
         }
         val statuses = relevant.map { line ->

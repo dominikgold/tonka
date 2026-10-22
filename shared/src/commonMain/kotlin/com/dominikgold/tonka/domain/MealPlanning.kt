@@ -160,7 +160,8 @@ object ShoppingListBuilder {
             val recipe = index[entry.recipeId] ?: return@forEach
             val snapshot = recipe.snapshot
             val variantId = snapshot.variant(entry.variantId).id
-            snapshot.effectiveLines(variantId).forEach { line ->
+            // A linked base recipe adds its own ingredients, credited to the planned dish
+            snapshot.expandedLines(variantId, index::snapshot).forEach { line ->
                 val ingredient = graph[line.ingredientId]
                 val key = ingredient?.id?.value ?: "name:" + TextNormalizer.normalize(line.displayName.ifBlank { line.rawText })
                 val accumulator = items.getOrPut(key) {

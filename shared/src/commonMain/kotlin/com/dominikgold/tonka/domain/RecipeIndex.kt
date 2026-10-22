@@ -79,6 +79,11 @@ class RecipeIndex(
 
     operator fun get(id: RecipeId?): IndexedRecipe? = id?.let { byId[it] }
 
+    fun snapshot(id: RecipeId): RecipeSnapshot? = byId[id]?.snapshot
+
+    // Recipes that can be linked into [recipeId] without creating a loop
+    fun linkableInto(recipeId: RecipeId): List<IndexedRecipe> = recipes.filter { !dependsOn(it.id, recipeId, ::snapshot) }
+
     fun search(query: RecipeQuery): List<SearchHit> {
         val tokens = TextNormalizer.words(query.text)
         val requiredTags = query.tags.map { TextNormalizer.normalize(it) }.toSet()
@@ -109,7 +114,8 @@ class RecipeIndex(
             graph: IngredientGraph,
             entries: List<MealPlanEntry>,
         ): RecipeIndex {
-            val analysis = RecipeAnalysis(graph)
+            val snapshots = records.associate { it.snapshot.id to it.snapshot }
+            val analysis = RecipeAnalysis(graph, snapshots::get)
             val planDatesByRecipe = entries.filter { it.recipeId != null }
                 .groupBy({ it.recipeId!! }, { it.date })
                 .mapValues { (_, dates) -> dates.sorted() }
@@ -119,7 +125,7 @@ class RecipeIndex(
                     record = record,
                     diet = analysis.diet(snapshot),
                     seasons = Month.entries.associateWith { analysis.season(snapshot, it) },
-                    words = searchWords(snapshot, graph),
+                    words = searchWords(snapshot, graph, snapshots::get),
                     normalizedTags = snapshot.tags.map { TextNormalizer.normalize(it) }.toSet(),
                     planDates = planDatesByRecipe[snapshot.id].orEmpty(),
                 )
@@ -127,13 +133,21 @@ class RecipeIndex(
             return RecipeIndex(recipes, graph, entries, isLoaded = true)
         }
 
-        private fun searchWords(snapshot: RecipeSnapshot, graph: IngredientGraph): Map<String, Int> {
+        // Linked recipes contribute their title and their own ingredients, so "carrot" also finds a dish built on a carrot base
+        private fun searchWords(
+            snapshot: RecipeSnapshot,
+            graph: IngredientGraph,
+            lookup: (RecipeId) -> RecipeSnapshot?,
+        ): Map<String, Int> {
             val words = mutableMapOf<String, Int>()
             fun add(text: String, weight: Int) {
                 TextNormalizer.words(text).forEach { word -> words[word] = maxOf(words[word] ?: 0, weight) }
             }
             add(snapshot.title, Tuning.SEARCH_TITLE_WEIGHT)
-            snapshot.lines.forEach { line ->
+            snapshot.lines.mapNotNull { it.linkedRecipeId }.forEach { linkedId ->
+                lookup(linkedId)?.let { add(it.title, Tuning.SEARCH_INGREDIENT_WEIGHT) }
+            }
+            snapshot.variants.flatMap { snapshot.expandedLines(it.id, lookup) }.distinctBy { it.id }.forEach { line ->
                 val ingredient = graph[line.ingredientId]
                 if (ingredient == null) {
                     add(line.rawText, Tuning.SEARCH_INGREDIENT_WEIGHT)
