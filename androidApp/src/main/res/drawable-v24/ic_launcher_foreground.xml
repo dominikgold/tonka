@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- "Roof h": a lowercase h whose shoulder is a pitched roof. Drawn inside the 66dp adaptive icon safe zone. -->
+<!-- A bowl with two leaves, drawn inside the 66dp adaptive icon safe zone -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:pathData="M41.7,72 L41.7,36.6"
-        android:strokeColor="#111111"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round" />
+        android:fillColor="#FFF8F4"
+        android:pathData="M32,56 L76,56 A22,22 0 0 1 54,78 A22,22 0 0 1 32,56 Z" />
     <path
-        android:pathData="M41.7,54.6 L54,44.7 L66.3,54.6 L66.3,72"
-        android:strokeColor="#111111"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+        android:fillColor="#FFF8F4"
+        android:pathData="M46,78 L62,78 Q63,78 63,79 L63,81 Q63,82 62,82 L46,82 Q45,82 45,81 L45,79 Q45,78 46,78 Z" />
+    <path
+        android:fillColor="#D9D58E"
+        android:pathData="M54,53 C53,43 59,35 69,32 C70,42 64,50 54,53 Z" />
+    <path
+        android:fillColor="#D9D58E"
+        android:pathData="M52,52 C47,46 42,44 37,45 C39,51 45,54 52,52 Z" />
 </vector>
