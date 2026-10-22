@@ -8,6 +8,7 @@ import com.dominikgold.tonka.data.RecipeRepository
 import com.dominikgold.tonka.designsystem.MonthState
 import com.dominikgold.tonka.domain.IndexedRecipe
 import com.dominikgold.tonka.domain.IngredientGraph
+import com.dominikgold.tonka.domain.RecipeIndex
 import com.dominikgold.tonka.domain.RecipeIndexProvider
 import com.dominikgold.tonka.domain.daysOfWeek
 import com.dominikgold.tonka.domain.displayName
@@ -46,6 +47,9 @@ data class LineUi(
     val line: IngredientLine,
     val ingredient: Ingredient?,
     val isInSeason: Boolean,
+    val linkedRecipe: IndexedRecipe? = null,
+    // The linked recipe's own ingredients, shown in the inline expandable list
+    val nestedLines: List<LineUi> = emptyList(),
 )
 
 data class LineGroup(
@@ -99,6 +103,7 @@ interface RecipeDetailActions {
     fun onBackClicked()
     fun onVariantSelected(variantId: VariantId)
     fun onLineClicked(lineId: LineId)
+    fun onLinkedRecipeClicked(recipeId: RecipeId)
     fun onAlternativesDismissed()
     fun onAlternativeClicked(ingredientId: IngredientId)
     fun onEditClicked()
@@ -153,14 +158,7 @@ class RecipeDetailViewModel(
         }
         val snapshot = recipe.snapshot
         val variant = snapshot.variant(variantId)
-        val graph = index.graph
-        val lines = snapshot.effectiveLines(variant.id).map { line ->
-            LineUi(
-                line = line,
-                ingredient = graph[line.ingredientId],
-                isInSeason = line.ingredientId?.let { graph.isSeasonal(it) && graph.isFresh(it, month) } == true,
-            )
-        }
+        val lines = snapshot.effectiveLines(variant.id).map { line -> lineUi(line, index, month, visited = setOf(recipeId)) }
         val sectionNames = snapshot.sections.associate { it.id to it.name }
         val inSeasonMonths = MonthSet.of(Month.entries.filter { recipe.season(it).isInSeason })
         RecipeDetailState(
@@ -208,6 +206,8 @@ class RecipeDetailViewModel(
             )
         }
     }
+
+    override fun onLinkedRecipeClicked(recipeId: RecipeId) = navigator.navigateTo(RecipeDetailRoute(recipeId.value))
 
     override fun onAlternativesDismissed() = local.update { it.copy(alternatives = null) }
 
@@ -273,6 +273,26 @@ class RecipeDetailViewModel(
     private companion object {
         const val PARTIAL_SEASON_SCORE = 0.3
     }
+}
+
+// A linked recipe brings its default variant's lines along; each recipe appears once per chain so a loop can't recurse
+private fun lineUi(
+    line: IngredientLine,
+    index: RecipeIndex,
+    month: Month,
+    visited: Set<RecipeId>,
+): LineUi {
+    val graph = index.graph
+    val linked = index[line.linkedRecipeId]?.takeIf { it.id !in visited }
+    return LineUi(
+        line = line,
+        ingredient = graph[line.ingredientId],
+        isInSeason = line.ingredientId?.let { graph.isSeasonal(it) && graph.isFresh(it, month) } == true,
+        linkedRecipe = linked,
+        nestedLines = linked?.let { recipe ->
+            recipe.snapshot.effectiveLines(recipe.snapshot.defaultVariant.id).map { lineUi(it, index, month, visited + recipe.id) }
+        }.orEmpty(),
+    )
 }
 
 // The line's own alternatives, then a category's examples, then global swaps, then siblings as a weaker hint

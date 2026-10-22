@@ -17,8 +17,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material3.AlertDialog
@@ -44,9 +47,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -61,10 +67,12 @@ import com.dominikgold.tonka.designsystem.SectionCard
 import com.dominikgold.tonka.designsystem.TonkaTheme
 import com.dominikgold.tonka.designsystem.TonkaTopBar
 import com.dominikgold.tonka.designsystem.minutesLabel
+import com.dominikgold.tonka.domain.IndexedRecipe
 import com.dominikgold.tonka.domain.displayName
 import com.dominikgold.tonka.model.IngredientId
 import com.dominikgold.tonka.model.LineId
 import com.dominikgold.tonka.model.NoteId
+import com.dominikgold.tonka.model.RecipeId
 import com.dominikgold.tonka.model.RecipeSnapshot
 import com.dominikgold.tonka.model.SourceType
 import com.dominikgold.tonka.model.VariantId
@@ -165,7 +173,7 @@ private fun RecipeDetailContent(
                         group.name?.let {
                             Text(it, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                         }
-                        group.lines.forEach { lineUi -> IngredientLineRow(lineUi, onClick = { actions.onLineClicked(lineUi.line.id) }) }
+                        group.lines.forEach { lineUi -> IngredientLineRow(lineUi, actions, isNested = false) }
                     }
                     if (state.lineGroups.isEmpty()) Text("No ingredients", style = MaterialTheme.typography.bodyMedium)
                 }
@@ -292,14 +300,21 @@ private fun VariantSelector(
 @Composable
 private fun IngredientLineRow(
     lineUi: LineUi,
-    onClick: () -> Unit,
+    actions: RecipeDetailActions,
+    isNested: Boolean,
 ) {
+    val linkedRecipe = lineUi.linkedRecipe
+    if (linkedRecipe != null) {
+        LinkedRecipeLineRow(lineUi, linkedRecipe, actions)
+        return
+    }
     val line = lineUi.line
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            // Alternatives belong to the recipe that owns the line, so nested lines from a linked recipe don't open them
+            .then(if (isNested) Modifier else Modifier.clickable { actions.onLineClicked(line.id) })
+            .padding(vertical = if (isNested) 4.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -326,6 +341,78 @@ private fun IngredientLineRow(
             )
             if (details.isNotEmpty()) {
                 Text(details.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+// Tapping the line opens the linked recipe; the chevron unfolds its ingredients in place
+@Composable
+private fun LinkedRecipeLineRow(
+    lineUi: LineUi,
+    linkedRecipe: IndexedRecipe,
+    actions: RecipeDetailActions,
+) {
+    val line = lineUi.line
+    var isExpanded by rememberSaveable(line.id.value) { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { actions.onLinkedRecipeClicked(linkedRecipe.id) }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                listOf(line.amountText, line.unit).filter { it.isNotBlank() }.joinToString(" "),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.width(80.dp),
+            )
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.MenuBook,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        linkedRecipe.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        textDecoration = TextDecoration.Underline,
+                    )
+                }
+                val details = listOfNotNull(
+                    line.preparation.takeIf { it.isNotBlank() },
+                    "optional".takeIf { line.isOptional },
+                )
+                if (details.isNotEmpty()) {
+                    Text(details.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (lineUi.nestedLines.isNotEmpty()) {
+                IconButton(onClick = { isExpanded = !isExpanded }) {
+                    Icon(
+                        if (isExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (isExpanded) "Hide ingredients of ${linkedRecipe.title}" else "Show ingredients of ${linkedRecipe.title}",
+                    )
+                }
+            }
+        }
+        if (isExpanded) {
+            val guideColor = MaterialTheme.colorScheme.outlineVariant
+            Column(
+                Modifier
+                    .padding(start = 8.dp, bottom = 4.dp)
+                    .drawBehind {
+                        drawLine(guideColor, Offset(0f, 0f), Offset(0f, size.height), strokeWidth = 2.dp.toPx())
+                    }
+                    .padding(start = 12.dp),
+            ) {
+                lineUi.nestedLines.forEach { nested -> IngredientLineRow(nested, actions, isNested = true) }
             }
         }
     }
@@ -465,6 +552,7 @@ private object FakeRecipeDetailActions : RecipeDetailActions {
     override fun onBackClicked() {}
     override fun onVariantSelected(variantId: VariantId) {}
     override fun onLineClicked(lineId: LineId) {}
+    override fun onLinkedRecipeClicked(recipeId: RecipeId) {}
     override fun onAlternativesDismissed() {}
     override fun onAlternativeClicked(ingredientId: IngredientId) {}
     override fun onEditClicked() {}
