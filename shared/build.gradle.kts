@@ -71,9 +71,8 @@ sqldelight {
     databases {
         create("TonkaDatabase") {
             packageName.set("com.dominikgold.tonka.data.db")
-            // Schema changes after v1 go into src/commonMain/sqldelight/migrations/<version>.sqm
+            // Schema changes go into src/commonMain/sqldelight/migrations/<version>.sqm, which migrates <version> to <version + 1>
             schemaOutputDirectory.set(file("src/commonMain/sqldelight/databases"))
-            migrationOutputDirectory.set(file("src/commonMain/sqldelight/migrations"))
             verifyMigrations.set(true)
         }
     }

@@ -53,6 +53,8 @@ val BackupSchema: List<BackupTable> = listOf(
         listOf(
             text("id"), text("recipe_id"), text("section_id"), integer("sort_order"), text("raw_text"), text("amount_text"),
             text("unit"), text("ingredient_id"), text("display_name"), text("preparation"), integer("is_optional"), integer("is_key"),
+            // Missing in backups made before linked recipes existed, so those rows import with no link
+            text("linked_recipe_id"),
         ),
         listOf("id"),
     ),

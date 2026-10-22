@@ -48,7 +48,8 @@ CREATE TABLE recipe_ingredient (
     display_name TEXT NOT NULL,
     preparation TEXT NOT NULL DEFAULT '',
     is_optional INTEGER AS Boolean NOT NULL DEFAULT 0,
-    is_key INTEGER AS Boolean NOT NULL DEFAULT 0
+    is_key INTEGER AS Boolean NOT NULL DEFAULT 0,
+    linked_recipe_id TEXT REFERENCES recipe(id) ON DELETE SET NULL
 );
 
 CREATE TABLE recipe_ingredient_alternative (
@@ -199,7 +200,7 @@ selectAllLines:
 SELECT * FROM recipe_ingredient ORDER BY recipe_id, sort_order, id;
 
 insertLine:
-INSERT INTO recipe_ingredient(id, recipe_id, section_id, sort_order, raw_text, amount_text, unit, ingredient_id, display_name, preparation, is_optional, is_key)
+INSERT INTO recipe_ingredient(id, recipe_id, section_id, sort_order, raw_text, amount_text, unit, ingredient_id, display_name, preparation, is_optional, is_key, linked_recipe_id)
 VALUES ?;
 
 deleteLinesOfRecipe:

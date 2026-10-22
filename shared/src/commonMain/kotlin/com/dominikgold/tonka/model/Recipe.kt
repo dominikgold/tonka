@@ -49,6 +49,8 @@ data class IngredientLine(
     val alternatives: List<LineAlternative> = emptyList(),
     // Empty means the line applies to every variant
     val variantIds: Set<VariantId> = emptySet(),
+    // Set when the line stands for another recipe, like a base dough; displayName then holds its title
+    val linkedRecipeId: RecipeId? = null,
 )
 
 @Serializable

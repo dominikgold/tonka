@@ -1,0 +1,2 @@
+-- An ingredient line can stand for another recipe, such as a base dough used in a tart
+ALTER TABLE recipe_ingredient ADD COLUMN linked_recipe_id TEXT REFERENCES recipe(id) ON DELETE SET NULL;

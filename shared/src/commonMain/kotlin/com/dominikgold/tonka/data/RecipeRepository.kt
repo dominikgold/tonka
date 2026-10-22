@@ -159,7 +159,8 @@ class RecipeRepository(
             val now = clock.nowMillis()
             val revision = currentRevision + 1
             val knownIngredients = database.ingredientQueries.selectAll().executeAsList().map { it.id }.toSet()
-            val sanitized = cleaned.withExistingIngredients(knownIngredients)
+            val knownRecipes = queries.selectAllRecipes().executeAsList().map { it.id }.toSet()
+            val sanitized = cleaned.withExistingReferences(knownIngredients, knownRecipes)
             writeRecipe(sanitized, revision, createdAt = existing?.created_at ?: now, updatedAt = now)
             queries.insertRevision(
                 DbRevision(
@@ -317,6 +318,7 @@ class RecipeRepository(
                     preparation = line.preparation,
                     is_optional = line.isOptional,
                     is_key = line.isKey,
+                    linked_recipe_id = line.linkedRecipeId?.value,
                 ),
             )
             line.alternatives.forEachIndexed { alternativeIndex, alternative ->
@@ -434,6 +436,7 @@ private fun assembleRecords(tables: RecipeTables): List<RecipeRecord> {
                             LineAlternative(ingredientId = IngredientId(it.ingredient_id), note = it.note)
                         },
                         variantIds = scopes(ScopeOwnerType.Line, line.id),
+                        linkedRecipeId = line.linked_recipe_id?.let(::RecipeId),
                     )
                 },
                 steps = stepsByRecipe[recipe.id].orEmpty().map { step ->
@@ -497,11 +500,13 @@ fun RecipeSnapshot.normalized(): RecipeSnapshot {
     )
 }
 
-private fun RecipeSnapshot.withExistingIngredients(known: Set<String>): RecipeSnapshot = copy(
+// An old revision can point at ingredients or recipes deleted since; those links are dropped, the line text stays
+private fun RecipeSnapshot.withExistingReferences(knownIngredients: Set<String>, knownRecipes: Set<String>): RecipeSnapshot = copy(
     lines = lines.map { line ->
         line.copy(
-            ingredientId = line.ingredientId?.takeIf { it.value in known },
-            alternatives = line.alternatives.filter { it.ingredientId.value in known },
+            ingredientId = line.ingredientId?.takeIf { it.value in knownIngredients },
+            alternatives = line.alternatives.filter { it.ingredientId.value in knownIngredients },
+            linkedRecipeId = line.linkedRecipeId?.takeIf { it.value in knownRecipes && it != id },
         )
     },
 )
