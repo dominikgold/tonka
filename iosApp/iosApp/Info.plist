@@ -4,5 +4,9 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Tonka uses the camera to photograph cookbook pages so they can be turned into recipes.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Tonka lets you pick recipe photos and cookbook pages from your library.</string>
 </dict>
 </plist>
