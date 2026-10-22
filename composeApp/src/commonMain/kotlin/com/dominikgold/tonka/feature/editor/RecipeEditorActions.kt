@@ -4,6 +4,7 @@ import com.dominikgold.tonka.model.DietClass
 import com.dominikgold.tonka.model.IngredientId
 import com.dominikgold.tonka.model.LineId
 import com.dominikgold.tonka.model.MonthSet
+import com.dominikgold.tonka.model.RecipeId
 import com.dominikgold.tonka.model.SectionId
 import com.dominikgold.tonka.model.SourceType
 import com.dominikgold.tonka.model.StepId
@@ -37,6 +38,8 @@ interface RecipeEditorActions {
 
     fun onAddLineClicked(sectionId: SectionId?)
     fun onAddLinesFromText(text: String, sectionId: SectionId?)
+    fun onLinkQueryChanged(query: String)
+    fun onRecipeLinked(recipeId: RecipeId)
     fun onLineAmountChanged(lineId: LineId, amount: String)
     fun onLineUnitChanged(lineId: LineId, unit: String)
     fun onLineNameChanged(lineId: LineId, name: String)
@@ -113,6 +116,8 @@ object FakeRecipeEditorActions : RecipeEditorActions {
     override fun onSectionRemoved(sectionId: SectionId) {}
     override fun onAddLineClicked(sectionId: SectionId?) {}
     override fun onAddLinesFromText(text: String, sectionId: SectionId?) {}
+    override fun onLinkQueryChanged(query: String) {}
+    override fun onRecipeLinked(recipeId: RecipeId) {}
     override fun onLineAmountChanged(lineId: LineId, amount: String) {}
     override fun onLineUnitChanged(lineId: LineId, unit: String) {}
     override fun onLineNameChanged(lineId: LineId, name: String) {}

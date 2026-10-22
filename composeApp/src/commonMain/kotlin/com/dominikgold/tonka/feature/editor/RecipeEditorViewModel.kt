@@ -6,9 +6,12 @@ import com.dominikgold.tonka.data.DraftRepository
 import com.dominikgold.tonka.data.ImageStore
 import com.dominikgold.tonka.data.IngredientRepository
 import com.dominikgold.tonka.data.RecipeRepository
+import com.dominikgold.tonka.domain.IndexedRecipe
 import com.dominikgold.tonka.domain.IngredientGraph
 import com.dominikgold.tonka.domain.IngredientMatch
 import com.dominikgold.tonka.domain.IngredientMatcher
+import com.dominikgold.tonka.domain.RecipeIndexProvider
+import com.dominikgold.tonka.domain.RecipeQuery
 import com.dominikgold.tonka.domain.Tuning
 import com.dominikgold.tonka.importing.ImportService
 import com.dominikgold.tonka.importing.IngredientLineParser
@@ -44,6 +47,7 @@ import com.dominikgold.tonka.util.userMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
@@ -99,6 +103,7 @@ class RecipeEditorViewModel(
     private val ingredientRepository: IngredientRepository,
     private val importService: ImportService,
     private val imageStore: ImageStore,
+    private val indexProvider: RecipeIndexProvider,
     private val navigator: Navigator,
 ) : ViewModel(), RecipeEditorActions {
 
@@ -107,6 +112,20 @@ class RecipeEditorViewModel(
     val graph: StateFlow<IngredientGraph> = ingredientRepository.graph
     val allTags: StateFlow<List<String>> = recipeRepository.tags.map { tags -> tags.map { it.name } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val linkQuery = MutableStateFlow("")
+
+    // Recipes that already use this one, directly or through others, are left out so links can't form a loop
+    val linkCandidates: StateFlow<List<IndexedRecipe>> = combine(
+        indexProvider.index,
+        linkQuery,
+        state.map { it.snapshot?.id }.distinctUntilChanged(),
+    ) { index, query, currentId ->
+        if (currentId == null) return@combine emptyList()
+        val allowed = index.linkableInto(currentId).map { it.id }.toSet()
+        val matches = if (query.isBlank()) index.recipes else index.search(RecipeQuery(text = query)).map { it.recipe }
+        matches.filter { it.id in allowed }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         viewModelScope.launch {
@@ -120,7 +139,7 @@ class RecipeEditorViewModel(
                 navigator.goBack()
                 return@launch
             }
-            state.value = EditorState(isLoading = false, draft = draft)
+            state.value = EditorState(isLoading = false, draft = draft.withCurrentLinkedTitles())
         }
         // Drafts of new recipes survive the app being killed; edits of saved recipes are not persisted until saved
         viewModelScope.launch {
@@ -130,6 +149,16 @@ class RecipeEditorViewModel(
                 .debounce(AUTOSAVE_DEBOUNCE_MILLIS)
                 .collect { draft -> if (draft.editingRecipeId == null && state.value.isDirty) draftRepository.save(draft) }
         }
+    }
+
+    // A linked recipe may have been renamed since the line was saved
+    private fun RecipeDraft.withCurrentLinkedTitles(): RecipeDraft {
+        val index = indexProvider.index.value
+        return copy(
+            snapshot = snapshot.copy(
+                lines = snapshot.lines.map { line -> index[line.linkedRecipeId]?.let { line.copy(displayName = it.title) } ?: line },
+            ),
+        )
     }
 
     private fun updateSnapshot(transform: (RecipeSnapshot) -> RecipeSnapshot) {
@@ -240,6 +269,26 @@ class RecipeEditorViewModel(
 
     override fun onAddLineClicked(sectionId: SectionId?) = updateSnapshot { snapshot ->
         snapshot.copy(lines = snapshot.lines + IngredientLine(id = LineId.new(), sectionId = sectionId, rawText = "", displayName = ""))
+    }
+
+    override fun onLinkQueryChanged(query: String) {
+        linkQuery.value = query
+    }
+
+    override fun onRecipeLinked(recipeId: RecipeId) {
+        val recipe = indexProvider.index.value[recipeId] ?: return
+        linkQuery.value = ""
+        updateSnapshot { snapshot ->
+            snapshot.copy(
+                lines = snapshot.lines + IngredientLine(
+                    id = LineId.new(),
+                    sectionId = snapshot.lines.lastOrNull()?.sectionId,
+                    rawText = "",
+                    displayName = recipe.title,
+                    linkedRecipeId = recipe.id,
+                ),
+            )
+        }
     }
 
     override fun onAddLinesFromText(text: String, sectionId: SectionId?) = updateSnapshot { snapshot ->
@@ -414,7 +463,9 @@ class RecipeEditorViewModel(
             messages.tryEmit("Give the recipe a title first.")
             return
         }
-        val unresolved = snapshot.lines.filter { it.ingredientId == null && (it.displayName.isNotBlank() || it.rawText.isNotBlank()) }
+        val unresolved = snapshot.lines.filter {
+            it.ingredientId == null && it.linkedRecipeId == null && (it.displayName.isNotBlank() || it.rawText.isNotBlank())
+        }
         if (unresolved.isEmpty()) {
             save()
             return

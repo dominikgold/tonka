@@ -89,6 +89,8 @@ fun RecipeEditorUi(
     val state by viewModel.state.collectLifecycleAware()
     val graph by viewModel.graph.collectLifecycleAware()
     val allTags by viewModel.allTags.collectLifecycleAware()
+    val linkQuery by viewModel.linkQuery.collectLifecycleAware()
+    val linkCandidates by viewModel.linkCandidates.collectLifecycleAware()
     val snackbarHostState = remember { SnackbarHostState() }
     viewModel.messages.collectEvents { snackbarHostState.showSnackbar(it) }
 
@@ -96,6 +98,7 @@ fun RecipeEditorUi(
         state = state,
         graph = graph,
         allTags = allTags,
+        recipeLinks = RecipeLinkState(linkQuery, linkCandidates),
         actions = viewModel,
         snackbarHostState = snackbarHostState,
     )
@@ -106,6 +109,7 @@ private fun RecipeEditorContent(
     state: EditorState,
     graph: IngredientGraph,
     allTags: List<String>,
+    recipeLinks: RecipeLinkState,
     actions: RecipeEditorActions,
     snackbarHostState: SnackbarHostState,
 ) {
@@ -143,6 +147,7 @@ private fun RecipeEditorContent(
                 draft = draft,
                 graph = graph,
                 allTags = allTags,
+                recipeLinks = recipeLinks,
                 actions = actions,
                 modifier = Modifier.padding(padding),
             )
@@ -186,6 +191,7 @@ private fun EditorForm(
     draft: RecipeDraft,
     graph: IngredientGraph,
     allTags: List<String>,
+    recipeLinks: RecipeLinkState,
     actions: RecipeEditorActions,
     modifier: Modifier = Modifier,
 ) {
@@ -201,7 +207,7 @@ private fun EditorForm(
         WarningBanner(draft.warnings)
         BasicsCard(draft, actions)
         VariantsCard(snapshot, actions)
-        IngredientsCard(snapshot, graph, actions)
+        IngredientsCard(snapshot, graph, recipeLinks, actions)
         StepsCard(snapshot, actions)
         TipsCard(snapshot, actions)
         TagsCard(snapshot, allTags, draft.tagSuggestions, actions)
@@ -568,6 +574,7 @@ private fun RecipeEditorPreview() {
             ),
             graph = IngredientGraph.Empty,
             allTags = emptyList(),
+            recipeLinks = RecipeLinkState(query = "", candidates = emptyList()),
             actions = FakeRecipeEditorActions,
             snackbarHostState = remember { SnackbarHostState() },
         )

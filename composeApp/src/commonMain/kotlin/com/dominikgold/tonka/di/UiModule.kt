@@ -50,6 +50,7 @@ val uiModule = module {
             ingredientRepository = get(),
             importService = get(),
             imageStore = get(),
+            indexProvider = get(),
             navigator = get(),
         )
     }

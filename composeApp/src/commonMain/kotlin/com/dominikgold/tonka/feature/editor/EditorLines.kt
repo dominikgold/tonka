@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
@@ -55,10 +56,12 @@ import com.dominikgold.tonka.model.VariantId
 fun IngredientsCard(
     snapshot: RecipeSnapshot,
     graph: IngredientGraph,
+    recipeLinks: RecipeLinkState,
     actions: RecipeEditorActions,
 ) {
     var isShowingPasteDialog by remember { mutableStateOf(false) }
     var isShowingSectionDialog by remember { mutableStateOf(false) }
+    var isShowingLinkSheet by remember { mutableStateOf(false) }
 
     SectionCard(title = "Ingredients") {
         SectionsRow(snapshot.sections, actions, onAddClicked = { isShowingSectionDialog = true })
@@ -67,23 +70,53 @@ fun IngredientsCard(
             key = { it.id.value },
             onMove = actions::onLineMoved,
         ) { line, dragHandle ->
-            LineEditor(
-                line = line,
-                graph = graph,
-                variants = snapshot.variants,
-                sections = snapshot.sections,
-                actions = actions,
-                dragHandle = dragHandle,
-            )
+            if (line.linkedRecipeId != null) {
+                LinkedRecipeLineEditor(
+                    line = line,
+                    variants = snapshot.variants,
+                    sections = snapshot.sections,
+                    actions = actions,
+                    dragHandle = dragHandle,
+                )
+            } else {
+                LineEditor(
+                    line = line,
+                    graph = graph,
+                    variants = snapshot.variants,
+                    sections = snapshot.sections,
+                    actions = actions,
+                    dragHandle = dragHandle,
+                )
+            }
         }
-        Row {
+        FlowRow {
             TextButton(onClick = { actions.onAddLineClicked(snapshot.lines.lastOrNull()?.sectionId) }) {
                 Icon(Icons.Rounded.Add, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
                 Text("Add ingredient")
             }
+            TextButton(onClick = { isShowingLinkSheet = true }) {
+                Icon(Icons.AutoMirrored.Rounded.MenuBook, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text("Link recipe")
+            }
             TextButton(onClick = { isShowingPasteDialog = true }) { Text("Paste lines") }
         }
+    }
+
+    if (isShowingLinkSheet) {
+        LinkRecipeSheet(
+            state = recipeLinks,
+            onQueryChanged = actions::onLinkQueryChanged,
+            onRecipePicked = { recipeId ->
+                isShowingLinkSheet = false
+                actions.onRecipeLinked(recipeId)
+            },
+            onDismiss = {
+                isShowingLinkSheet = false
+                actions.onLinkQueryChanged("")
+            },
+        )
     }
 
     if (isShowingPasteDialog) {
