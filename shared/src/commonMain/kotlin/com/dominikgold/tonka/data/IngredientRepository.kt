@@ -142,6 +142,7 @@ class IngredientRepository(
             val ingredient = queries.selectById(id.value).executeAsOneOrNull() ?: return@transaction
             if (queries.countReferences(id.value).executeAsOne() > 0) throw IngredientInUseException(ingredient.name)
             queries.deleteById(id.value)
+            rememberRemovedSeedKey(ingredient.seed_key)
         }
     }
 
@@ -165,6 +166,7 @@ class IngredientRepository(
             queries.deleteSelfEdges()
             queries.moveAliases(toId = intoId.value, fromId = fromId.value)
             queries.deleteById(fromId.value)
+            rememberRemovedSeedKey(from.seed_key)
             parentIds.filter { it != intoId }.forEach { parentId ->
                 runCatching { addEdgeChecked(intoId, parentId) }
             }
@@ -190,21 +192,27 @@ class IngredientRepository(
         Unit
     }
 
+    // Rows the owner edited keep their values, aliases and categories; every other seeded row is reset to the seed,
+    // so aliases or categories the seed no longer lists disappear as well
     suspend fun applySeed(seed: SeedData) = withContext(Dispatchers.IO) {
         val settingsQueries = database.mealPlanQueries
         val appliedVersion = settingsQueries.selectSetting(SettingKey.SeedVersion).executeAsOneOrNull()?.toIntOrNull() ?: 0
         if (appliedVersion >= seed.version) return@withContext
         val now = clock.nowMillis()
         database.transaction {
+            val removedSeedKeys = removedSeedKeys()
             val idsByKey = mutableMapOf<String, IngredientId>()
+            val resetIds = mutableSetOf<IngredientId>()
             val nodes = seed.categories.map { it to IngredientKind.CATEGORY } + seed.ingredients.map { it to IngredientKind.INGREDIENT }
             for ((node, kind) in nodes) {
                 val seedKey = "seed:${node.key}"
+                if (seedKey in removedSeedKeys) continue
                 val existing = queries.selectBySeedKey(seedKey).executeAsOneOrNull()
                     ?: queries.selectByName(node.name).executeAsOneOrNull()
                 val seasonality = seed.seasonalityOf(node)
                 val id = existing?.let { IngredientId(it.id) } ?: IngredientId.new()
                 idsByKey[node.key] = id
+                if (existing == null || !existing.user_edited) resetIds += id
                 when {
                     existing == null -> queries.insert(
                         DbIngredient(
@@ -240,19 +248,34 @@ class IngredientRepository(
                         id = id.value,
                     )
                 }
-                if (existing == null || !existing.user_edited) {
-                    node.aliases.forEach { alias -> insertAlias(id, alias) }
-                }
+                if (existing != null && existing.seed_key != seedKey) queries.setSeedKey(seedKey, id.value)
+            }
+            // Rebuilt only once every row exists, so an alias can move to an ingredient this version splits off
+            resetIds.forEach { id ->
+                queries.deleteAliasesFor(id.value)
+                queries.deleteParentEdgesOf(id.value)
             }
             for ((node, _) in nodes) {
-                val childId = idsByKey.getValue(node.key)
+                val id = idsByKey[node.key]?.takeIf { it in resetIds } ?: continue
+                node.aliases.forEach { alias -> insertAlias(id, alias) }
                 node.parents.mapNotNull { idsByKey[it] }.forEach { parentId ->
-                    runCatching { addEdgeChecked(childId, parentId) }
+                    runCatching { addEdgeChecked(id, parentId) }
                 }
             }
             settingsQueries.upsertSetting(SettingKey.SeedVersion, seed.version.toString())
         }
     }
+
+    // Seeded ingredients the owner deleted or merged away must not come back with the next seed version
+    private fun rememberRemovedSeedKey(seedKey: String?) {
+        if (seedKey == null) return
+        val keys = removedSeedKeys() + seedKey
+        database.mealPlanQueries.upsertSetting(SettingKey.RemovedSeedKeys, keys.sorted().joinToString(","))
+    }
+
+    private fun removedSeedKeys(): Set<String> =
+        database.mealPlanQueries.selectSetting(SettingKey.RemovedSeedKeys).executeAsOneOrNull()
+            ?.split(',')?.filter { it.isNotBlank() }?.toSet().orEmpty()
 
     private fun insertIngredient(
         id: IngredientId,

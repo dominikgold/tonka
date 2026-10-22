@@ -75,6 +75,9 @@ WHERE id = :id;
 setNeedsReview:
 UPDATE ingredient SET needs_review = ?, updated_at = ? WHERE id = ?;
 
+setSeedKey:
+UPDATE ingredient SET seed_key = ? WHERE id = ?;
+
 deleteById:
 DELETE FROM ingredient WHERE id = ?;
 

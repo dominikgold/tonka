@@ -17,6 +17,7 @@ object SettingKey {
     const val KeepScanPhotos = "keep_scan_photos"
     const val ScanNoticeAcknowledged = "scan_notice_acknowledged"
     const val SeedVersion = "seed_version"
+    const val RemovedSeedKeys = "removed_seed_keys"
     const val RecipeSort = "recipe_sort"
 }
 
