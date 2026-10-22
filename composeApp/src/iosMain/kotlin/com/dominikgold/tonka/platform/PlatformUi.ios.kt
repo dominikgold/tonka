@@ -1,6 +1,7 @@
 package com.dominikgold.tonka.platform
 
 import androidx.compose.runtime.Composable
+import io.github.vinceglb.filekit.dialogs.FileKitType
 import androidx.compose.runtime.rememberCoroutineScope
 import io.github.vinceglb.filekit.dialogs.compose.rememberCameraPickerLauncher
 import io.github.vinceglb.filekit.readBytes
@@ -16,3 +17,5 @@ actual fun rememberCameraLauncher(onPhotoTaken: (ByteArray) -> Unit): (() -> Uni
     }
     return { launcher.launch() }
 }
+
+actual fun fileKitType(forExtensions: Set<String>): FileKitType = FileKitType.File(extensions = forExtensions)

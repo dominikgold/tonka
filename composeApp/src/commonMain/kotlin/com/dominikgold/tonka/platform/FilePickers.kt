@@ -23,7 +23,7 @@ fun rememberFilePicker(
     onPicked: (name: String, bytes: ByteArray) -> Unit,
 ): () -> Unit {
     val scope = rememberCoroutineScope()
-    val launcher = rememberFilePickerLauncher(type = FileKitType.File(extensions = extensions)) { file ->
+    val launcher = rememberFilePickerLauncher(type = fileKitType(forExtensions = extensions)) { file ->
         if (file != null) scope.launch { onPicked(file.name, file.readBytes()) }
     }
     return { launcher.launch() }
